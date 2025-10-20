@@ -24,11 +24,12 @@ stored in the *abl_a* and *abl_b* partitions.
 To package our newly built *abl2esp* binary, setup EDK2 for the packaging:
 
 ```
-git clone https://github.com/tianocore/edk2.git
+# The edk source tree is huge, a shallow clone will do
+git clone --recursive --depth=1 --shallow-submodules https://github.com/tianocore/edk2.git
 cd edk2
-git submodule update --init
 make -C BaseTools
-. edksetup.sh
+. ./edksetup.sh
+cd .. # back to the abl2esp source tree
 ```
 
 Then in the same shell run:
