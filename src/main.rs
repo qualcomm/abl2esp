@@ -8,11 +8,13 @@ use core::mem::MaybeUninit;
 use core::ptr::NonNull;
 
 use log::info;
-use uefi::boot::{self, EventType, LoadImageSource, SearchType, Tpl};
+use uefi::boot::{self, EventType, LoadImageSource, OpenProtocolParams, SearchType, Tpl, image_handle};
+use uefi::proto::console::text::{Input, Key, ScanCode};
 use uefi::proto::device_path::{build, DevicePath};
 use uefi::proto::media::file::{File, FileAttribute, FileMode};
 use uefi::proto::media::fs::SimpleFileSystem;
 use uefi::proto::BootPolicy;
+use uefi::runtime::ResetType;
 use uefi::{guid, prelude::*, CStr16};
 use uefi::{Identify, Result};
 
@@ -102,6 +104,26 @@ fn signal_guid(guid: &uefi::Guid) -> Result {
     Ok(())
 }
 
+fn get_held_key() -> Result<Option<Key>> {
+    let handles = boot::locate_handle_buffer(SearchType::ByProtocol(&Input::GUID))?;
+    for handle in handles.iter() {
+        let mut input = unsafe { 
+            boot::open_protocol::<Input>( OpenProtocolParams {
+                handle: *handle,
+                agent: image_handle(),
+                controller: None,
+            }, 
+            boot::OpenProtocolAttributes::GetProtocol) 
+        }?;
+
+        if let Ok(Some(pressed_key)) = input.read_key() {
+            return Ok(Some(pressed_key));
+        }
+    }
+
+    Ok(None)
+}
+
 #[entry]
 fn main() -> Status {
     uefi::helpers::init().unwrap();
@@ -113,6 +135,13 @@ fn main() -> Status {
     signal_guid(&READY_TO_BOOT).expect("Failed to signal ReadyToBoot");
 
     signal_guid(&END_OF_DXE).expect("Failed to signal end of DXE");
+
+    if let Ok(Some(Key::Special(ScanCode::ESCAPE))) = get_held_key() {
+        runtime::reset(
+            ResetType::PLATFORM_SPECIFIC,
+            Status::SUCCESS,
+            Some(cstr16!("EDL").as_bytes()));
+    }
 
     let image = load_bootaa64()
         .expect("An error occurred while searching for bootaa64.efi")
